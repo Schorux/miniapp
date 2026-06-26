@@ -276,9 +276,6 @@ document.addEventListener('click', function(e) {
   const index = parseInt(trackEl.dataset.index);
   const track = trackCache[id];
 
-  console.log('Click track:', id, track);
-  alert('Нажат трек: ' + (track ? track.title : 'НЕ НАЙДЕН id=' + id));
-
   if (track) playTrack(track, trackEl.dataset.context, index);
 });
 
