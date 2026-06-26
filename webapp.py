@@ -145,8 +145,10 @@ async def api_wave(artist: str = None, track: str = None):
 
 @app.get("/api/stream/{video_id}")
 async def api_stream(video_id: str):
-    """Прямая ссылка на аудио через yt-dlp"""
+    """Проксируем аудио поток через сервер — без задержки"""
     import yt_dlp
+    import httpx
+    from fastapi.responses import StreamingResponse
 
     url = f"https://www.youtube.com/watch?v={video_id}"
     ydl_opts = {
@@ -159,27 +161,54 @@ async def api_stream(video_id: str):
         'extractor_args': {'youtube': {'player_client': ['android']}},
         'noplaylist': True,
     }
+    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
+    if os.path.exists(cookies_file):
+        ydl_opts['cookiefile'] = cookies_file
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
 
             audio_url = None
+            content_type = 'audio/mp4'
+
             for f in formats:
                 if f.get('ext') == 'm4a' and f.get('url') and f.get('acodec') != 'none':
                     audio_url = f['url']
+                    content_type = 'audio/mp4'
                     break
             if not audio_url:
                 for f in reversed(formats):
                     if f.get('acodec') not in ('none', None) and f.get('url') and f.get('vcodec') == 'none':
                         audio_url = f['url']
+                        ext = f.get('ext', 'mp4')
+                        content_type = f'audio/{ext}'
                         break
             if not audio_url:
-                audio_url = info.get('url')
+                audio_url = info.get('url', '')
             if not audio_url:
                 raise HTTPException(500, "No audio URL found")
 
-            return RedirectResponse(url=audio_url, status_code=302)
+            # Проксируем поток
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.youtube.com/',
+            }
+
+            async def stream_audio():
+                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                    async with client.stream('GET', audio_url, headers=headers) as resp:
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            yield chunk
+
+            return StreamingResponse(
+                stream_audio(),
+                media_type=content_type,
+                headers={
+                    'Accept-Ranges': 'bytes',
+                    'Cache-Control': 'no-cache',
+                }
+            )
 
     except HTTPException:
         raise
