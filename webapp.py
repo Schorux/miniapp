@@ -106,3 +106,36 @@ async def api_download(video_id: str):
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(500, "Download failed")
     return FileResponse(file_path, media_type="audio/mpeg", filename=f"{video_id}.mp3")
+
+
+@app.get("/api/stream/{video_id}")
+async def api_stream(video_id: str):
+    """Получить прямую ссылку на аудио без скачивания"""
+    import yt_dlp
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'format': 'bestaudio/best',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        'extractor_args': {
+            'youtube': {'player_client': ['android', 'web']}
+        },
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            audio_url = info.get('url')
+            if not audio_url:
+                # Ищем в форматах
+                for f in reversed(info.get('formats', [])):
+                    if f.get('acodec') != 'none' and f.get('url'):
+                        audio_url = f['url']
+                        break
+            if not audio_url:
+                raise HTTPException(500, "No audio URL found")
+            return {"url": audio_url, "title": info.get("title"), "duration": info.get("duration")}
+    except Exception as e:
+        raise HTTPException(500, str(e))
