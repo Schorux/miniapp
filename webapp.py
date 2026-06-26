@@ -154,11 +154,11 @@ async def api_stream(video_id: str):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+        'format': 'bestaudio/best',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
-        'extractor_args': {'youtube': {'player_client': ['android']}},
+        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
         'noplaylist': True,
     }
     cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
