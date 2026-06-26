@@ -2,12 +2,15 @@
 FastAPI сервер для Telegram Mini App
 """
 
+import os
 import logging
+import asyncio
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from database import (
@@ -17,6 +20,9 @@ from database import (
 from music import search_youtube_music
 
 logger = logging.getLogger(__name__)
+
+CACHE_DIR = Path("/tmp/audio_cache")
+CACHE_DIR.mkdir(exist_ok=True)
 
 app = FastAPI()
 
@@ -82,32 +88,43 @@ async def api_wave():
                 all_tracks.append(t)
     return {"tracks": all_tracks[:10], "based_on": [e["artist"] for e in top_artists]}
 
-@app.get("/api/audio-url/{video_id}")
-async def api_audio_url(video_id: str):
-    """Возвращает прямой URL на аудио — браузер сам ставит его в audio.src"""
+@app.get("/api/audio/{video_id}")
+async def api_audio(video_id: str):
+    """Скачиваем MP3 в /tmp и отдаём как байты"""
     import yt_dlp
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        'extractor_args': {'youtube': {'player_client': ['ios']}},
-    }
+    cache_file = CACHE_DIR / f"{video_id}.mp3"
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            audio_url = None
-            for fmt in reversed(info.get('formats', [])):
-                if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none' and fmt.get('url'):
-                    audio_url = fmt['url']
-                    break
-            if not audio_url:
-                audio_url = info.get('url')
-            if not audio_url:
-                raise HTTPException(500, "No audio URL found")
-            return {"url": audio_url}
-    except Exception as e:
-        logger.error(f"yt-dlp error: {e}")
-        raise HTTPException(500, str(e))
+    # Если уже скачан — отдаём сразу
+    if not cache_file.exists():
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'format': 'bestaudio/best',
+            'outtmpl': str(CACHE_DIR / f"{video_id}.%(ext)s"),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '128',
+            }],
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            def download():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+            await loop.run_in_executor(None, download)
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            raise HTTPException(500, f"Download failed: {e}")
+
+    if not cache_file.exists():
+        raise HTTPException(500, "File not found after download")
+
+    # Читаем и отдаём весь файл как байты — без Content-Length проблем
+    data = cache_file.read_bytes()
+    return Response(
+        content=data,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
