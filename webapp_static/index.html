@@ -433,21 +433,11 @@ async function playTrack(trackJson, context, index) {
     loadWave(track);
   }
 
-  // Load audio
+  // Load audio — стримим напрямую
   const videoId = track.id;
-  // Получаем прямую ссылку на аудио
-  try {
-    const sr = await fetch(`${BASE}/api/stream/${videoId}`);
-    const sd = await sr.json();
-    if (!sd.url) throw new Error("no url");
-    audio.src = sd.url;
-  } catch(e) {
-    console.error("Stream error:", e);
-    document.getElementById("np-title").textContent = "❌ Ошибка воспроизведения";
-    return;
-  }
+  audio.src = `${BASE}/api/stream/${videoId}`;
   audio.load();
-  try { await audio.play(); isPlaying = true; } catch(e) { console.error(e); }
+  try { await audio.play(); isPlaying = true; } catch(e) { console.error('Play error:', e); }
 }
 
 function togglePlay() {
