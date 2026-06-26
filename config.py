@@ -1,7 +1,7 @@
 import os
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
-LASTFM_API_KEY = os.environ.get("LASTFM_API_KEY", "")
+LASTFM_API_KEY = os.environ.get("86994b4b159bf6446e9dc27363e806be", "")
 
 # Абсолютный путь — работает из любой директории
 _base = os.path.dirname(os.path.abspath(__file__))
