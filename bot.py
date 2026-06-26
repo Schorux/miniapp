@@ -3,22 +3,28 @@ import os
 import sys
 import importlib.util
 
-logger_setup = logging.getLogger(__name__)
+_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Создаём папку handlers и __init__.py если не существуют
+handlers_dir = os.path.join(_dir, "handlers")
+os.makedirs(handlers_dir, exist_ok=True)
+init_file = os.path.join(handlers_dir, "__init__.py")
+if not os.path.exists(init_file):
+    open(init_file, 'w').close()
 
 def _load(name, filepath):
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Not found: {filepath}\nFiles in dir: {os.listdir(os.path.dirname(filepath))}")
     spec = importlib.util.spec_from_file_location(name, filepath)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
-_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Грузим модули напрямую по пути
 _load("config", f"{_dir}/config.py")
 _load("database", f"{_dir}/database.py")
 _load("music", f"{_dir}/music.py")
-_load("handlers", f"{_dir}/handlers/__init__.py")
+_load("handlers", init_file)
 _load("handlers.search", f"{_dir}/handlers/search.py")
 _load("handlers.favorites", f"{_dir}/handlers/favorites.py")
 _load("handlers.wave", f"{_dir}/handlers/wave.py")
@@ -80,7 +86,6 @@ async def start_command(update, context):
     keyboard = []
     if WEBAPP_URL:
         keyboard = [[InlineKeyboardButton("🎵 Открыть плеер", web_app=WebAppInfo(url=WEBAPP_URL))]]
-
     text = (
         "🎵 *Привет! Я твой личный музыкальный бот.*\n\n"
         "🔍 *Поиск:* просто напиши название трека\n"
@@ -91,13 +96,10 @@ async def start_command(update, context):
     )
     if WEBAPP_URL:
         text += "\n\n👆 Или открой полноценный плеер кнопкой ниже"
-
     await update.message.reply_text(
-        text,
-        parse_mode='Markdown',
+        text, parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
     )
-
 
 async def help_command(update, context):
     text = (
@@ -110,7 +112,6 @@ async def help_command(update, context):
         "💡 Чем больше лайков — тем точнее волна!"
     )
     await update.message.reply_text(text, parse_mode='Markdown')
-
 
 async def test_command(update, context):
     lines = ["🔧 *Диагностика:*\n"]
@@ -138,8 +139,9 @@ async def test_command(update, context):
     except Exception as e:
         lines.append(f"❌ БД: {e}")
     lines.append(f"🌐 WEBAPP_URL: `{os.environ.get('WEBAPP_URL', 'не задан')}`")
+    lines.append(f"📁 DIR: `{_dir}`")
+    lines.append(f"📂 Files: `{', '.join(os.listdir(_dir))}`")
     await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
-
 
 if __name__ == '__main__':
     main()
