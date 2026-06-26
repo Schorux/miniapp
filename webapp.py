@@ -2,19 +2,17 @@
 FastAPI сервер для Telegram Mini App
 """
 
-import os
 import logging
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
-import httpx
 
 from database import (
     get_favorites, add_favorite, remove_favorite,
-    is_favorite, get_top_artists_from_favorites
+    get_top_artists_from_favorites
 )
 from music import search_youtube_music
 
@@ -78,15 +76,18 @@ async def api_wave():
         return {"tracks": [], "message": "Добавь треки в избранное для рекомендаций"}
     all_tracks = []
     for entry in top_artists[:2]:
-        artist = entry["artist"]
-        results = search_youtube_music(f"{artist} similar", max_results=4)
+        results = search_youtube_music(f"{entry['artist']} similar", max_results=4)
         for t in results:
             if t not in all_tracks:
                 all_tracks.append(t)
     return {"tracks": all_tracks[:10], "based_on": [e["artist"] for e in top_artists]}
 
 @app.get("/api/stream/{video_id}")
-async def api_stream(video_id: str, request: Request):
+async def api_stream(video_id: str):
+    """
+    Получаем прямой URL от yt-dlp и делаем redirect.
+    Браузер сам обращается к YouTube — никакого проксирования.
+    """
     import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -94,9 +95,9 @@ async def api_stream(video_id: str, request: Request):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
         'extractor_args': {
-            'youtube': {'player_client': ['ios', 'android']}
+            'youtube': {'player_client': ['ios']}
         },
     }
 
@@ -114,35 +115,9 @@ async def api_stream(video_id: str, request: Request):
             if not audio_url:
                 raise HTTPException(500, "No audio URL found")
 
-            yt_headers = {
-                'User-Agent': info.get('http_headers', {}).get('User-Agent', 'Mozilla/5.0'),
-            }
-
     except Exception as e:
         logger.error(f"yt-dlp error: {e}")
         raise HTTPException(500, str(e))
 
-    range_header = request.headers.get("range")
-    proxy_headers = {**yt_headers}
-    if range_header:
-        proxy_headers["Range"] = range_header
-
-    async def proxy_stream():
-        async with httpx.AsyncClient(timeout=60) as client:
-            async with client.stream("GET", audio_url, headers=proxy_headers) as resp:
-                async for chunk in resp.aiter_bytes(chunk_size=32768):
-                    yield chunk
-
-    # Только эти заголовки — без Content-Length и Content-Range
-    response_headers = {
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "no-cache",
-        "Transfer-Encoding": "chunked",
-    }
-
-    return StreamingResponse(
-        proxy_stream(),
-        status_code=200,  # всегда 200, не 206 — избегаем проблем с Range
-        media_type="audio/mp4",
-        headers=response_headers,
-    )
+    # Редирект — браузер сам играет напрямую с YouTube CDN
+    return RedirectResponse(url=audio_url, status_code=302)
