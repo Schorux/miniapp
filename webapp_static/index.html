@@ -259,22 +259,26 @@ let isRepeat = false;
 let searchTimer = null;
 let trackCache = {}; // кэш треков по id
 
-// Делегирование кликов — надёжнее чем onclick
+// Делегирование кликов
 document.addEventListener('click', function(e) {
   const trackEl = e.target.closest('.track');
   if (!trackEl) return;
+
   if (e.target.closest('.track-fav')) {
-    // Клик по сердечку
     const favBtn = e.target.closest('.track-fav');
     const id = favBtn.dataset.id;
     const track = trackCache[id];
     if (track) toggleFav(track, favBtn);
     return;
   }
-  // Клик по треку
+
   const id = trackEl.dataset.trackId;
   const index = parseInt(trackEl.dataset.index);
   const track = trackCache[id];
+
+  console.log('Click track:', id, track);
+  alert('Нажат трек: ' + (track ? track.title : 'НЕ НАЙДЕН id=' + id));
+
   if (track) playTrack(track, trackEl.dataset.context, index);
 });
 
