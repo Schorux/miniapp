@@ -352,18 +352,30 @@ function updateNpFav() {
 }
 
 // ─── WAVE ────────────────────────────────────────────────────
-async function loadWave() {
+let waveQueue = [];
+
+async function loadWave(forceTrack) {
   showLoader('wave-list');
   try {
-    const r = await fetch(`${BASE}/api/wave`);
-    const data = await r.json();
-    if (!data.tracks.length) {
-      document.getElementById('wave-list').innerHTML = '<div class="empty"><div class="emoji">🌊</div><p>' + (data.message || 'Добавь треки в избранное!') + '</p></div>';
-    } else {
-      const label = data.based_on ? `<div class="section-label" style="padding-top:0">Основано на: ${data.based_on.join(', ')}</div>` : '';
-      document.getElementById('wave-list').innerHTML = label;
-      renderTracks('wave-list', data.tracks, 'wave', true);
+    const track = forceTrack || currentTrack;
+    let url = `${BASE}/api/wave`;
+    if (track && track.artist && track.artist !== 'Unknown Artist') {
+      url += `?artist=${encodeURIComponent(track.artist)}&track=${encodeURIComponent(track.track_name || track.title)}`;
     }
+    const r = await fetch(url);
+    const data = await r.json();
+    if (!data.tracks || !data.tracks.length) {
+      document.getElementById('wave-list').innerHTML = '<div class="empty"><div class="emoji">🌊</div><p>' + (data.message || 'Добавь треки в избранное!') + '</p></div>';
+      return;
+    }
+    const basedOn = data.based_on || '';
+    const modeLabel = data.mode === 'similar'
+      ? `Похожее на: <b>${basedOn}</b>`
+      : `На основе: <b>${basedOn}</b>`;
+    document.getElementById('wave-list').innerHTML =
+      `<div class="section-label" style="padding-top:0;font-size:12px;text-transform:none;letter-spacing:0">${modeLabel}</div>`;
+    renderTracks('wave-list', data.tracks, 'wave', true);
+    waveQueue = data.tracks;
   } catch(e) {
     document.getElementById('wave-list').innerHTML = '<div class="empty"><div class="emoji">😕</div><p>Ошибка загрузки</p></div>';
   }
@@ -415,6 +427,11 @@ async function playTrack(trackJson, context, index) {
   document.getElementById('play-pause-btn').textContent = '⏸️';
   updateNpFav();
   markPlaying(track.id);
+
+  // Обновляем волну на основе текущего трека
+  if (document.getElementById('page-wave').classList.contains('active')) {
+    loadWave(track);
+  }
 
   // Load audio
   const videoId = track.id;
