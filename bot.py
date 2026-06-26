@@ -1,10 +1,12 @@
-"""
-🎵 Personal Music Telegram Bot
-Entry point — запускать: python bot.py
-"""
-
 import logging
 import os
+import sys
+
+# Гарантируем что папка бота в пути
+_here = os.path.dirname(os.path.abspath(__file__))
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, InlineQueryHandler
@@ -112,10 +114,7 @@ async def test_command(update, context):
     try:
         from music import search_youtube_music
         results = search_youtube_music("test", max_results=1)
-        if results:
-            lines.append(f"✅ Поиск работает: нашёл '{results[0]['title'][:30]}'")
-        else:
-            lines.append("⚠️ Поиск вернул 0 результатов")
+        lines.append(f"✅ Поиск работает" if results else "⚠️ Поиск вернул 0 результатов")
     except Exception as e:
         lines.append(f"❌ Поиск: {e}")
 
