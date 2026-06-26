@@ -145,108 +145,33 @@ async def api_wave(artist: str = None, track: str = None):
 
 @app.get("/api/stream/{track_id:path}")
 async def api_stream(track_id: str, url: str = None):
-    \"\"\"Стримим аудио — начинаем отдавать пока скачивается\"\"\"
-    import asyncio
-    import yt_dlp
+    """Скачиваем и стримим аудио (SoundCloud / Deezer)"""
     from fastapi.responses import StreamingResponse
 
     output_path = os.path.join(str(Path(__file__).parent / "temp_music"), f"{track_id}.mp3")
 
-    # Уже скачан — отдаём сразу
-    if os.path.exists(output_path):
-        def iter_cached():
-            with open(output_path, 'rb') as f:
-                while chunk := f.read(65536):
-                    yield chunk
-        return StreamingResponse(iter_cached(), media_type="audio/mpeg",
-            headers={'Content-Length': str(os.path.getsize(output_path)), 'Accept-Ranges': 'bytes'})
+    if not os.path.exists(output_path):
+        if not url:
+            raise HTTPException(400, "url parameter required")
+        file_path = await download_audio(url, track_id)
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(500, "Download failed")
+        output_path = file_path
 
-    if not url:
-        raise HTTPException(400, "url parameter required")
+    def iter_file():
+        with open(output_path, 'rb') as f:
+            while chunk := f.read(65536):
+                yield chunk
 
-    # Deezer preview — качаем и сразу проксируем
-    if 'deezer' in track_id or 'cdns.dzcdn.net' in url:
-        import httpx
-        async def stream_deezer():
-            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                async with client.stream('GET', url) as resp:
-                    async for chunk in resp.aiter_bytes(32768):
-                        yield chunk
-        return StreamingResponse(stream_deezer(), media_type="audio/mpeg")
-
-    # SoundCloud — качаем через yt-dlp в файл, начинаем стримить как только появятся данные
-    async def stream_while_downloading():
-        import asyncio
-
-        # Запускаем скачивание в фоне
-        loop = asyncio.get_event_loop()
-        download_task = loop.run_in_executor(None, lambda: _ytdlp_download(url, output_path, track_id))
-
-        # Ждём пока появится файл (макс 15 сек)
-        for _ in range(150):
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 32768:
-                break
-            await asyncio.sleep(0.1)
-
-        if not os.path.exists(output_path):
-            await download_task
-            if not os.path.exists(output_path):
-                return
-
-        # Стримим файл пока он скачивается
-        sent = 0
-        while True:
-            if os.path.exists(output_path):
-                size = os.path.getsize(output_path)
-                if size > sent:
-                    with open(output_path, 'rb') as f:
-                        f.seek(sent)
-                        chunk = f.read(32768)
-                    if chunk:
-                        sent += len(chunk)
-                        yield chunk
-                        continue
-
-            # Проверяем завершилось ли скачивание
-            if download_task.done():
-                break
-            await asyncio.sleep(0.05)
-
-    return StreamingResponse(stream_while_downloading(), media_type="audio/mpeg",
-        headers={'Cache-Control': 'no-cache'})
-
-
-def _ytdlp_download(url: str, output_path: str, track_id: str):
-    \"\"\"Синхронное скачивание через yt-dlp\"\"\"
-    import yt_dlp
-    from pathlib import Path
-    temp_dir = str(Path(output_path).parent)
-
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'format': 'bestaudio/best',
-        'outtmpl': os.path.join(temp_dir, f"{track_id}.%(ext)s"),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception as e:
-        logger.error(f"yt-dlp download error: {e}")"""
-
-if old in content:
-    content = content.replace(old, new)
-    print("OK")
-else:
-    print("NOT FOUND")
-
-with open('/home/claude/music_bot/webapp.py', 'w') as f:
-    f.write(content)
+    return StreamingResponse(
+        iter_file(),
+        media_type="audio/mpeg",
+        headers={
+            'Content-Length': str(os.path.getsize(output_path)),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-cache',
+        }
+    )
 
 @app.get("/api/stream_old/{video_id}")
 async def api_stream_old(video_id: str):
