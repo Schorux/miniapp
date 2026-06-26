@@ -151,6 +151,8 @@ async def api_stream(video_id: str):
     from fastapi.responses import StreamingResponse
 
     url = f"https://www.youtube.com/watch?v={video_id}"
+    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
+
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -158,12 +160,13 @@ async def api_stream(video_id: str):
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
-        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
         'noplaylist': True,
     }
-    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
     if os.path.exists(cookies_file):
         ydl_opts['cookiefile'] = cookies_file
+        logger.info(f"Using cookies from {cookies_file}")
+    else:
+        logger.warning(f"cookies.txt NOT FOUND at {cookies_file}")
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
