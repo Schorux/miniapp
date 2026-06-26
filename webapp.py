@@ -10,13 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-import aiofiles
+import httpx
 
 from database import (
     get_favorites, add_favorite, remove_favorite,
     is_favorite, get_top_artists_from_favorites
 )
-from music import search_youtube_music, download_audio
+from music import search_youtube_music
 
 logger = logging.getLogger(__name__)
 
@@ -85,38 +85,89 @@ async def api_wave():
                 all_tracks.append(t)
     return {"tracks": all_tracks[:10], "based_on": [e["artist"] for e in top_artists]}
 
-@app.get("/api/download/{video_id}")
-async def api_download(video_id: str, request: Request):
+@app.get("/api/stream/{video_id}")
+async def api_stream(video_id: str, request: Request):
+    """
+    Получаем прямой URL от yt-dlp и проксируем его через сервер.
+    Музыка начинает играть сразу — без скачивания на диск.
+    """
+    import yt_dlp
+
     url = f"https://www.youtube.com/watch?v={video_id}"
-    file_path = await download_audio(url, video_id)
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(500, "Download failed")
 
-    file_size = os.path.getsize(file_path)
-    range_header = request.headers.get("range")
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+        'extractor_args': {
+            'youtube': {'player_client': ['ios', 'android']}
+        },
+    }
 
-    if range_header:
-        start, end = range_header.replace("bytes=", "").split("-")
-        start = int(start)
-        end = int(end) if end else file_size - 1
-        chunk_size = end - start + 1
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
 
-        async def stream_range():
-            async with aiofiles.open(file_path, "rb") as f:
-                await f.seek(start)
-                data = await f.read(chunk_size)
-                yield data
+            audio_url = None
+            audio_mime = 'audio/webm'
 
-        return StreamingResponse(
-            stream_range(), status_code=206, media_type="audio/mpeg",
-            headers={
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(chunk_size),
-            }
-        )
+            # Ищем лучший аудио формат
+            for fmt in reversed(info.get('formats', [])):
+                if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none' and fmt.get('url'):
+                    audio_url = fmt['url']
+                    audio_mime = fmt.get('http_headers', {}).get('Content-Type', 'audio/webm')
+                    break
 
-    return FileResponse(
-        file_path, media_type="audio/mpeg",
-        headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
+            if not audio_url:
+                audio_url = info.get('url')
+
+            if not audio_url:
+                raise HTTPException(500, "No audio URL found")
+
+            headers = info.get('http_headers', {
+                'User-Agent': 'Mozilla/5.0',
+            })
+
+    except Exception as e:
+        logger.error(f"yt-dlp error: {e}")
+        raise HTTPException(500, str(e))
+
+    # Проксируем запрос — браузер получает аудио через наш сервер
+    range_header = request.headers.get("range", "bytes=0-")
+
+    async def proxy_stream():
+        proxy_headers = {**headers, "Range": range_header}
+        async with httpx.AsyncClient(timeout=30) as client:
+            async with client.stream("GET", audio_url, headers=proxy_headers) as resp:
+                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                    yield chunk
+
+    # Получаем размер файла для заголовков
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            head = await client.head(audio_url, headers=headers)
+            content_length = head.headers.get("content-length", "")
+            content_range = head.headers.get("content-range", "")
+    except Exception:
+        content_length = ""
+        content_range = ""
+
+    response_headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache",
+    }
+    if content_length:
+        response_headers["Content-Length"] = content_length
+    if range_header and range_header != "bytes=0-":
+        status_code = 206
+        if content_range:
+            response_headers["Content-Range"] = content_range
+    else:
+        status_code = 200
+
+    return StreamingResponse(
+        proxy_stream(),
+        status_code=status_code,
+        media_type=audio_mime,
+        headers=response_headers,
     )
