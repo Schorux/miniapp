@@ -83,6 +83,8 @@ async def download_audio(youtube_url: str, video_id: str) -> str | None:
     if os.path.exists(output_path):
         return output_path
 
+    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
+
     ydl_opts = {
         'quiet': False,
         'no_warnings': False,
@@ -94,15 +96,12 @@ async def download_audio(youtube_url: str, video_id: str) -> str | None:
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        # Обход ограничений
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web'],
-            }
-        },
-        'sleep_interval': 1,
-        'max_sleep_interval': 3,
     }
+    if os.path.exists(cookies_file):
+        ydl_opts['cookiefile'] = cookies_file
+        logger.info(f"download_audio: using cookies {cookies_file}")
+    else:
+        logger.warning(f"download_audio: cookies.txt NOT FOUND at {cookies_file}")
 
     try:
         loop = asyncio.get_event_loop()
