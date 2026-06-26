@@ -1,11 +1,28 @@
 import logging
 import os
 import sys
+import importlib.util
 
-# Гарантируем что папка бота в пути
-_here = os.path.dirname(os.path.abspath(__file__))
-if _here not in sys.path:
-    sys.path.insert(0, _here)
+logger_setup = logging.getLogger(__name__)
+
+def _load(name, filepath):
+    spec = importlib.util.spec_from_file_location(name, filepath)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Грузим модули напрямую по пути
+_load("config", f"{_dir}/config.py")
+_load("database", f"{_dir}/database.py")
+_load("music", f"{_dir}/music.py")
+_load("handlers", f"{_dir}/handlers/__init__.py")
+_load("handlers.search", f"{_dir}/handlers/search.py")
+_load("handlers.favorites", f"{_dir}/handlers/favorites.py")
+_load("handlers.wave", f"{_dir}/handlers/wave.py")
+_load("handlers.upload", f"{_dir}/handlers/upload.py")
 
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -97,37 +114,30 @@ async def help_command(update, context):
 
 async def test_command(update, context):
     lines = ["🔧 *Диагностика:*\n"]
-
     try:
         import yt_dlp
         lines.append(f"✅ yt-dlp {yt_dlp.version.__version__}")
     except Exception as e:
         lines.append(f"❌ yt-dlp: {e}")
-
     import subprocess
     try:
         subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
         lines.append("✅ ffmpeg установлен")
     except Exception as e:
         lines.append(f"❌ ffmpeg: {e}")
-
     try:
         from music import search_youtube_music
         results = search_youtube_music("test", max_results=1)
-        lines.append(f"✅ Поиск работает" if results else "⚠️ Поиск вернул 0 результатов")
+        lines.append("✅ Поиск работает" if results else "⚠️ Поиск вернул 0 результатов")
     except Exception as e:
         lines.append(f"❌ Поиск: {e}")
-
     try:
         from database import get_favorites
         get_favorites()
         lines.append("✅ База данных работает")
     except Exception as e:
         lines.append(f"❌ БД: {e}")
-
-    webapp_url = os.environ.get("WEBAPP_URL", "не задан")
-    lines.append(f"🌐 WEBAPP_URL: `{webapp_url}`")
-
+    lines.append(f"🌐 WEBAPP_URL: `{os.environ.get('WEBAPP_URL', 'не задан')}`")
     await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
 
 
