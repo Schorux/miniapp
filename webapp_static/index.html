@@ -421,7 +421,7 @@ async function playTrack(trackJson, context, index) {
 
   // Загружаем через сервер — без CORS проблем
   const videoId = track.id;
-  audio.src = `${BASE}/api/download/${videoId}`;
+  audio.src = `${BASE}/api/stream/${videoId}`;
   audio.preload = 'auto';
   audio.load();
 
