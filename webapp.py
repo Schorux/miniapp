@@ -87,10 +87,6 @@ async def api_wave():
 
 @app.get("/api/stream/{video_id}")
 async def api_stream(video_id: str, request: Request):
-    """
-    Получаем прямой URL от yt-dlp и проксируем его через сервер.
-    Музыка начинает играть сразу — без скачивания на диск.
-    """
     import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -111,11 +107,9 @@ async def api_stream(video_id: str, request: Request):
             audio_url = None
             audio_mime = 'audio/webm'
 
-            # Ищем лучший аудио формат
             for fmt in reversed(info.get('formats', [])):
                 if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none' and fmt.get('url'):
                     audio_url = fmt['url']
-                    audio_mime = fmt.get('http_headers', {}).get('Content-Type', 'audio/webm')
                     break
 
             if not audio_url:
@@ -124,7 +118,7 @@ async def api_stream(video_id: str, request: Request):
             if not audio_url:
                 raise HTTPException(500, "No audio URL found")
 
-            headers = info.get('http_headers', {
+            yt_headers = info.get('http_headers', {
                 'User-Agent': 'Mozilla/5.0',
             })
 
@@ -132,38 +126,24 @@ async def api_stream(video_id: str, request: Request):
         logger.error(f"yt-dlp error: {e}")
         raise HTTPException(500, str(e))
 
-    # Проксируем запрос — браузер получает аудио через наш сервер
-    range_header = request.headers.get("range", "bytes=0-")
+    range_header = request.headers.get("range")
+    proxy_headers = {**yt_headers}
+    if range_header:
+        proxy_headers["Range"] = range_header
 
     async def proxy_stream():
-        proxy_headers = {**headers, "Range": range_header}
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             async with client.stream("GET", audio_url, headers=proxy_headers) as resp:
                 async for chunk in resp.aiter_bytes(chunk_size=65536):
                     yield chunk
 
-    # Получаем размер файла для заголовков
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            head = await client.head(audio_url, headers=headers)
-            content_length = head.headers.get("content-length", "")
-            content_range = head.headers.get("content-range", "")
-    except Exception:
-        content_length = ""
-        content_range = ""
-
+    # НЕ передаём Content-Length — избегаем ошибки "Too little data"
     response_headers = {
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-cache",
     }
-    if content_length:
-        response_headers["Content-Length"] = content_length
-    if range_header and range_header != "bytes=0-":
-        status_code = 206
-        if content_range:
-            response_headers["Content-Range"] = content_range
-    else:
-        status_code = 200
+
+    status_code = 206 if range_header else 200
 
     return StreamingResponse(
         proxy_stream(),
