@@ -418,7 +418,17 @@ async function playTrack(trackJson, context, index) {
 
   // Load audio
   const videoId = track.id;
-  audio.src = `${BASE}/api/download/${videoId}`;
+  // Получаем прямую ссылку на аудио
+  try {
+    const sr = await fetch(`${BASE}/api/stream/${videoId}`);
+    const sd = await sr.json();
+    if (!sd.url) throw new Error("no url");
+    audio.src = sd.url;
+  } catch(e) {
+    console.error("Stream error:", e);
+    document.getElementById("np-title").textContent = "❌ Ошибка воспроизведения";
+    return;
+  }
   audio.load();
   try { await audio.play(); isPlaying = true; } catch(e) { console.error(e); }
 }
