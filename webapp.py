@@ -143,19 +143,17 @@ async def api_wave(artist: str = None, track: str = None):
     }
 
 
-@app.get("/api/stream/{video_id}")
-async def api_stream(video_id: str):
-    """Скачиваем и стримим аудио"""
+@app.get("/api/stream/{track_id:path}")
+async def api_stream(track_id: str, url: str = None):
+    """Скачиваем и стримим аудио (SoundCloud / Deezer)"""
     from fastapi.responses import StreamingResponse
-    import asyncio
 
-    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
-    output_path = os.path.join(str(Path(__file__).parent / "temp_music"), f"{video_id}.mp3")
+    output_path = os.path.join(str(Path(__file__).parent / "temp_music"), f"{track_id}.mp3")
 
-    # Если уже скачан — отдаём сразу
     if not os.path.exists(output_path):
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-        file_path = await download_audio(youtube_url, video_id)
+        if not url:
+            raise HTTPException(400, "url parameter required")
+        file_path = await download_audio(url, track_id)
         if not file_path or not os.path.exists(file_path):
             raise HTTPException(500, "Download failed")
         output_path = file_path
