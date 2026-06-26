@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from database import (
@@ -82,29 +82,22 @@ async def api_wave():
                 all_tracks.append(t)
     return {"tracks": all_tracks[:10], "based_on": [e["artist"] for e in top_artists]}
 
-@app.get("/api/stream/{video_id}")
-async def api_stream(video_id: str):
-    """
-    Получаем прямой URL от yt-dlp и делаем redirect.
-    Браузер сам обращается к YouTube — никакого проксирования.
-    """
+@app.get("/api/audio-url/{video_id}")
+async def api_audio_url(video_id: str):
+    """Возвращает прямой URL на аудио — браузер сам ставит его в audio.src"""
     import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
-
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        'extractor_args': {
-            'youtube': {'player_client': ['ios']}
-        },
+        'extractor_args': {'youtube': {'player_client': ['ios']}},
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
             audio_url = None
             for fmt in reversed(info.get('formats', [])):
                 if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none' and fmt.get('url'):
@@ -114,10 +107,7 @@ async def api_stream(video_id: str):
                 audio_url = info.get('url')
             if not audio_url:
                 raise HTTPException(500, "No audio URL found")
-
+            return {"url": audio_url}
     except Exception as e:
         logger.error(f"yt-dlp error: {e}")
         raise HTTPException(500, str(e))
-
-    # Редирект — браузер сам играет напрямую с YouTube CDN
-    return RedirectResponse(url=audio_url, status_code=302)
