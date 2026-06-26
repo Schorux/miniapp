@@ -16,13 +16,12 @@ logging.basicConfig(
 )
 
 def run_fastapi():
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=8000, log_level="warning")
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="info")
 
 if __name__ == '__main__':
-    # FastAPI в отдельном потоке
     t = threading.Thread(target=run_fastapi, daemon=True)
     t.start()
 
-    # Бот в главном потоке (требует main thread для сигналов)
     from bot import main as bot_main
     bot_main()
