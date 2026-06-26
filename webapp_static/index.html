@@ -257,6 +257,26 @@ let isPlaying = false;
 let isShuffle = false;
 let isRepeat = false;
 let searchTimer = null;
+let trackCache = {}; // кэш треков по id
+
+// Делегирование кликов — надёжнее чем onclick
+document.addEventListener('click', function(e) {
+  const trackEl = e.target.closest('.track');
+  if (!trackEl) return;
+  if (e.target.closest('.track-fav')) {
+    // Клик по сердечку
+    const favBtn = e.target.closest('.track-fav');
+    const id = favBtn.dataset.id;
+    const track = trackCache[id];
+    if (track) toggleFav(track, favBtn);
+    return;
+  }
+  // Клик по треку
+  const id = trackEl.dataset.trackId;
+  const index = parseInt(trackEl.dataset.index);
+  const track = trackCache[id];
+  if (track) playTrack(track, trackEl.dataset.context, index);
+});
 
 const audio = document.getElementById('audio');
 
@@ -304,7 +324,8 @@ async function loadFavorites() {
   }
 }
 
-async function toggleFav(track, btn) {
+async function toggleFav(trackOrJson, btn) {
+  const track = typeof trackOrJson === 'string' ? JSON.parse(trackOrJson) : trackOrJson;
   const isFav = favorites.some(f => f.track_name === track.track_name && f.artist === track.artist);
   if (isFav) {
     const fav = favorites.find(f => f.track_name === track.track_name && f.artist === track.artist);
@@ -388,20 +409,24 @@ function renderTracks(containerId, tracks, context, append = false) {
     container.innerHTML = '<div class="empty"><div class="emoji">😕</div><p>Ничего не найдено</p></div>';
     return;
   }
+  // Сохраняем треки в глобальный кэш
+  tracks.forEach(t => { trackCache[t.id] = t; });
+
   const html = tracks.map((t, i) => {
     const fav = isFavorite(t);
     const thumb = t.thumbnail
       ? `<img src="${t.thumbnail}" alt="" loading="lazy" onerror="this.parentNode.textContent='🎵'"/>`
       : '🎵';
+    const playing = currentTrack && currentTrack.id === t.id ? 'playing' : '';
     return `
-    <div class="track ${currentTrack && currentTrack.id === t.id ? 'playing' : ''}" onclick="playTrack(${JSON.stringify(JSON.stringify(t))}, '${context}', ${i})">
+    <div class="track ${playing}" data-track-id="${t.id}" data-index="${i}" data-context="${context}">
       <div class="track-thumb">${thumb}</div>
       <div class="track-meta">
         <div class="track-title">${esc(t.track_name || t.title)}</div>
         <div class="track-artist">${esc(t.artist)}</div>
       </div>
       <div class="track-dur">${t.duration || ''}</div>
-      <div class="track-fav ${fav ? 'active' : ''}" data-id="${t.id}" onclick="event.stopPropagation();toggleFav(${JSON.stringify(JSON.stringify(t))}, this)">${fav ? '❤️' : '🤍'}</div>
+      <div class="track-fav ${fav ? 'active' : ''}" data-id="${t.id}">${fav ? '❤️' : '🤍'}</div>
     </div>`;
   }).join('');
   if (append) container.insertAdjacentHTML('beforeend', html);
@@ -413,8 +438,8 @@ function esc(s) {
 }
 
 // ─── PLAYER ──────────────────────────────────────────────────
-async function playTrack(trackJson, context, index) {
-  const track = JSON.parse(trackJson);
+async function playTrack(trackOrJson, context, index) {
+  const track = typeof trackOrJson === 'string' ? JSON.parse(trackOrJson) : trackOrJson;
   currentTrack = track;
   queueIndex = index;
 
