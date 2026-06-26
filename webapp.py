@@ -105,22 +105,18 @@ async def api_stream(video_id: str, request: Request):
             info = ydl.extract_info(url, download=False)
 
             audio_url = None
-            audio_mime = 'audio/webm'
-
             for fmt in reversed(info.get('formats', [])):
                 if fmt.get('acodec') != 'none' and fmt.get('vcodec') == 'none' and fmt.get('url'):
                     audio_url = fmt['url']
                     break
-
             if not audio_url:
                 audio_url = info.get('url')
-
             if not audio_url:
                 raise HTTPException(500, "No audio URL found")
 
-            yt_headers = info.get('http_headers', {
-                'User-Agent': 'Mozilla/5.0',
-            })
+            yt_headers = {
+                'User-Agent': info.get('http_headers', {}).get('User-Agent', 'Mozilla/5.0'),
+            }
 
     except Exception as e:
         logger.error(f"yt-dlp error: {e}")
@@ -134,20 +130,19 @@ async def api_stream(video_id: str, request: Request):
     async def proxy_stream():
         async with httpx.AsyncClient(timeout=60) as client:
             async with client.stream("GET", audio_url, headers=proxy_headers) as resp:
-                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                async for chunk in resp.aiter_bytes(chunk_size=32768):
                     yield chunk
 
-    # НЕ передаём Content-Length — избегаем ошибки "Too little data"
+    # Только эти заголовки — без Content-Length и Content-Range
     response_headers = {
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-cache",
+        "Transfer-Encoding": "chunked",
     }
-
-    status_code = 206 if range_header else 200
 
     return StreamingResponse(
         proxy_stream(),
-        status_code=status_code,
-        media_type=audio_mime,
+        status_code=200,  # всегда 200, не 206 — избегаем проблем с Range
+        media_type="audio/mp4",
         headers=response_headers,
     )
