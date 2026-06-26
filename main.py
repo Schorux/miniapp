@@ -1,14 +1,9 @@
 import sys
 import os
 
-# Получаем абсолютный путь к папке где лежит main.py
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, APP_DIR)
-os.chdir(APP_DIR)
-
-print(f"APP_DIR: {APP_DIR}")
-print(f"sys.path: {sys.path[:3]}")
-print(f"files: {os.listdir(APP_DIR)}")
+_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _dir)
+os.chdir(_dir)
 
 import asyncio
 import logging
@@ -22,7 +17,9 @@ logging.basicConfig(
 )
 
 def run_bot():
-    sys.path.insert(0, APP_DIR)
+    # Создаём новый event loop для потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     from bot import main as bot_main
     bot_main()
 
