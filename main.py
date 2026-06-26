@@ -5,7 +5,6 @@ _dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _dir)
 os.chdir(_dir)
 
-import asyncio
 import logging
 import threading
 import uvicorn
@@ -16,19 +15,14 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-def run_bot():
-    # Создаём новый event loop для потока
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    from bot import main as bot_main
-    bot_main()
-
-async def run_all():
-    config = uvicorn.Config(fastapi_app, host="0.0.0.0", port=8000, log_level="warning")
-    server = uvicorn.Server(config)
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    await server.serve()
+def run_fastapi():
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=8000, log_level="warning")
 
 if __name__ == '__main__':
-    asyncio.run(run_all())
+    # FastAPI в отдельном потоке
+    t = threading.Thread(target=run_fastapi, daemon=True)
+    t.start()
+
+    # Бот в главном потоке (требует main thread для сигналов)
+    from bot import main as bot_main
+    bot_main()
