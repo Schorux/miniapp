@@ -28,8 +28,6 @@ body {
   flex-direction: column;
   height: 100vh;
 }
-
-/* TABS */
 .tabs {
   display: flex;
   background: var(--surface);
@@ -43,13 +41,9 @@ body {
   transition: color .2s, border-color .2s;
 }
 .tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
-
-/* PAGES */
 .pages { flex: 1; overflow: hidden; position: relative; }
 .page { position: absolute; inset: 0; overflow-y: auto; display: none; padding-bottom: calc(var(--player-h) + 8px); }
 .page.active { display: block; }
-
-/* SEARCH BAR */
 .search-wrap {
   padding: 12px;
   position: sticky; top: 0; z-index: 10;
@@ -67,8 +61,6 @@ body {
   position: absolute; left: 24px; top: 50%; transform: translateY(-50%);
   color: var(--muted); font-size: 17px; pointer-events: none;
 }
-
-/* TRACK ITEM */
 .track-list { padding: 0 12px; }
 .track {
   display: flex; align-items: center; gap: 12px;
@@ -95,23 +87,17 @@ body {
   transition: color .2s; cursor: pointer;
 }
 .track-fav.active { color: var(--danger); }
-
-/* SECTION LABEL */
 .section-label {
   padding: 14px 12px 6px;
   font-size: 11px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
 }
-
-/* EMPTY STATE */
 .empty {
   text-align: center; padding: 60px 24px;
   color: var(--muted);
 }
 .empty .emoji { font-size: 48px; margin-bottom: 12px; }
 .empty p { font-size: 14px; line-height: 1.5; }
-
-/* PLAYER */
 .player {
   position: fixed; bottom: 0; left: 0; right: 0;
   background: var(--surface);
@@ -133,8 +119,6 @@ body {
 .np-artist { font-size: 12px; color: var(--muted); margin-top: 1px; }
 .np-fav { font-size: 20px; cursor: pointer; color: var(--muted); transition: color .2s; }
 .np-fav.active { color: var(--danger); }
-
-/* PROGRESS */
 .progress { margin-bottom: 8px; }
 .progress-bar {
   height: 3px; background: #ffffff15; border-radius: 2px;
@@ -145,8 +129,6 @@ body {
   width: 0%; transition: width .5s linear;
 }
 .progress-times { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
-
-/* CONTROLS */
 .controls { display: flex; align-items: center; justify-content: space-between; }
 .ctrl { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 20px; border-radius: 50%; transition: color .2s, background .15s; }
 .ctrl:active { background: #ffffff10; }
@@ -157,20 +139,26 @@ body {
   transition: transform .1s, background .2s;
 }
 .play-pause:active { transform: scale(.94); }
-
-/* LOADER */
 .loader { display: flex; gap: 6px; justify-content: center; padding: 24px; }
 .loader span { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
 .loader span:nth-child(2) { animation-delay: .15s; }
 .loader span:nth-child(3) { animation-delay: .3s; }
 @keyframes pulse { 0%,100%{opacity:.3;transform:scale(.7)} 50%{opacity:1;transform:scale(1)} }
-
-/* WAVE TAG */
 .wave-tag {
   display: inline-block; padding: 2px 8px; border-radius: 20px;
   background: #7c6af720; color: var(--accent2); font-size: 11px; margin-left: 6px;
 }
-
+/* Индикатор загрузки трека */
+.loading-track {
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px; padding: 2px 0;
+}
+.loading-track span {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent2); animation: pulse 0.8s ease-in-out infinite;
+}
+.loading-track span:nth-child(2) { animation-delay: .1s; }
+.loading-track span:nth-child(3) { animation-delay: .2s; }
 audio { display: none; }
 </style>
 </head>
@@ -183,8 +171,6 @@ audio { display: none; }
 </div>
 
 <div class="pages">
-
-  <!-- SEARCH -->
   <div class="page active" id="page-search">
     <div class="search-wrap">
       <span class="search-icon">🔍</span>
@@ -195,7 +181,6 @@ audio { display: none; }
     </div>
   </div>
 
-  <!-- FAVORITES -->
   <div class="page" id="page-favorites">
     <div class="section-label">Любимые треки</div>
     <div id="favorites-list" class="track-list">
@@ -203,17 +188,14 @@ audio { display: none; }
     </div>
   </div>
 
-  <!-- WAVE -->
   <div class="page" id="page-wave">
     <div class="section-label">Моя Волна <span class="wave-tag">на основе избранного</span></div>
     <div id="wave-list" class="track-list">
       <div class="loader"><span></span><span></span><span></span></div>
     </div>
   </div>
-
 </div>
 
-<!-- PLAYER -->
 <div class="player hidden" id="player">
   <div class="now-playing">
     <div class="np-cover" id="np-cover">🎵</div>
@@ -241,14 +223,13 @@ audio { display: none; }
   </div>
 </div>
 
-<audio id="audio"></audio>
+<audio id="audio" preload="none"></audio>
 
 <script>
 const BASE = '';
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-// ─── STATE ───────────────────────────────────────────────────
 let queue = [];
 let queueIndex = -1;
 let currentTrack = null;
@@ -257,6 +238,7 @@ let isPlaying = false;
 let isShuffle = false;
 let isRepeat = false;
 let searchTimer = null;
+let isLoadingTrack = false;
 
 const audio = document.getElementById('audio');
 
@@ -272,7 +254,10 @@ function showTab(name) {
 document.getElementById('search-input').addEventListener('input', e => {
   clearTimeout(searchTimer);
   const q = e.target.value.trim();
-  if (q.length < 2) { document.getElementById('search-results').innerHTML = '<div class="empty"><div class="emoji">🎵</div><p>Введи название трека</p></div>'; return; }
+  if (q.length < 2) {
+    document.getElementById('search-results').innerHTML = '<div class="empty"><div class="emoji">🎵</div><p>Введи название трека</p></div>';
+    return;
+  }
   showLoader('search-results');
   searchTimer = setTimeout(() => doSearch(q), 500);
 });
@@ -281,7 +266,8 @@ async function doSearch(q) {
   try {
     const r = await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`);
     const data = await r.json();
-    renderTracks('search-results', data.results, 'search');
+    queue = data.results || [];
+    renderTracks('search-results', queue, 'search');
   } catch(e) {
     document.getElementById('search-results').innerHTML = '<div class="empty"><div class="emoji">😕</div><p>Ошибка поиска. Попробуй ещё раз.</p></div>';
   }
@@ -293,7 +279,7 @@ async function loadFavorites() {
   try {
     const r = await fetch(`${BASE}/api/favorites`);
     const data = await r.json();
-    favorites = data.favorites;
+    favorites = data.favorites || [];
     if (!favorites.length) {
       document.getElementById('favorites-list').innerHTML = '<div class="empty"><div class="emoji">🤍</div><p>Пока пусто.<br>Нажимай 🤍 у треков чтобы добавить.</p></div>';
     } else {
@@ -336,11 +322,6 @@ function toggleCurrentFav() {
   if (!currentTrack) return;
   const btn = document.getElementById('np-fav');
   toggleFav(currentTrack, btn);
-  document.querySelectorAll('.track-fav').forEach(b => {
-    if (b.dataset.id === currentTrack.id) {
-      b.textContent = isFavorite(currentTrack) ? '🤍' : '❤️';
-    }
-  });
 }
 
 function updateNpFav() {
@@ -357,7 +338,7 @@ async function loadWave() {
   try {
     const r = await fetch(`${BASE}/api/wave`);
     const data = await r.json();
-    if (!data.tracks.length) {
+    if (!data.tracks || !data.tracks.length) {
       document.getElementById('wave-list').innerHTML = '<div class="empty"><div class="emoji">🌊</div><p>' + (data.message || 'Добавь треки в избранное!') + '</p></div>';
     } else {
       const label = data.based_on ? `<div class="section-label" style="padding-top:0">Основано на: ${data.based_on.join(', ')}</div>` : '';
@@ -372,7 +353,7 @@ async function loadWave() {
 // ─── RENDER TRACKS ───────────────────────────────────────────
 function renderTracks(containerId, tracks, context, append = false) {
   const container = document.getElementById(containerId);
-  if (!tracks.length) {
+  if (!tracks || !tracks.length) {
     container.innerHTML = '<div class="empty"><div class="emoji">😕</div><p>Ничего не найдено</p></div>';
     return;
   }
@@ -381,15 +362,16 @@ function renderTracks(containerId, tracks, context, append = false) {
     const thumb = t.thumbnail
       ? `<img src="${t.thumbnail}" alt="" loading="lazy" onerror="this.parentNode.textContent='🎵'"/>`
       : '🎵';
+    const trackJson = esc(JSON.stringify(t));
     return `
-    <div class="track ${currentTrack && currentTrack.id === t.id ? 'playing' : ''}" onclick="playTrack(${JSON.stringify(JSON.stringify(t))}, '${context}', ${i})">
+    <div class="track ${currentTrack && currentTrack.id === t.id ? 'playing' : ''}" onclick="playTrack('${trackJson}', '${context}', ${i})">
       <div class="track-thumb">${thumb}</div>
       <div class="track-meta">
-        <div class="track-title">${esc(t.track_name || t.title)}</div>
-        <div class="track-artist">${esc(t.artist)}</div>
+        <div class="track-title">${esc(t.track_name || t.title || '')}</div>
+        <div class="track-artist">${esc(t.artist || '')}</div>
       </div>
       <div class="track-dur">${t.duration || ''}</div>
-      <div class="track-fav ${fav ? 'active' : ''}" data-id="${t.id}" onclick="event.stopPropagation();toggleFav(${JSON.stringify(JSON.stringify(t))}, this)">${fav ? '❤️' : '🤍'}</div>
+      <div class="track-fav ${fav ? 'active' : ''}" onclick="event.stopPropagation();handleFavClick('${trackJson}', this)">${fav ? '❤️' : '🤍'}</div>
     </div>`;
   }).join('');
   if (append) container.insertAdjacentHTML('beforeend', html);
@@ -397,49 +379,79 @@ function renderTracks(containerId, tracks, context, append = false) {
 }
 
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function handleFavClick(trackJson, btn) {
+  try {
+    const track = JSON.parse(trackJson.replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>'));
+    toggleFav(track, btn);
+  } catch(e) { console.error('fav parse error', e); }
 }
 
 // ─── PLAYER ──────────────────────────────────────────────────
 async function playTrack(trackJson, context, index) {
-  const track = JSON.parse(trackJson);
+  if (isLoadingTrack) return;
+
+  let track;
+  try {
+    track = JSON.parse(trackJson.replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>'));
+  } catch(e) { console.error('parse error', e); return; }
+
   currentTrack = track;
   queueIndex = index;
+  isLoadingTrack = true;
 
-  // Update UI
-  document.getElementById('np-title').textContent = track.track_name || track.title;
-  document.getElementById('np-artist').textContent = track.artist;
+  // Обновляем UI сразу
+  document.getElementById('np-title').textContent = track.track_name || track.title || '—';
+  document.getElementById('np-artist').textContent = track.artist || '—';
   const cover = document.getElementById('np-cover');
   cover.innerHTML = track.thumbnail ? `<img src="${track.thumbnail}" onerror="this.parentNode.textContent='🎵'"/>` : '🎵';
   document.getElementById('player').classList.remove('hidden');
-  document.getElementById('play-pause-btn').textContent = '⏸️';
+  // Показываем анимацию загрузки вместо кнопки play
+  document.getElementById('play-pause-btn').textContent = '⏳';
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('time-cur').textContent = '0:00';
+  document.getElementById('time-dur').textContent = '0:00';
   updateNpFav();
-  markPlaying(track.id);
 
-  // Load audio
+  // Останавливаем предыдущий трек
+  audio.pause();
+  audio.src = '';
+
+  // Загружаем через сервер — без CORS проблем
   const videoId = track.id;
-  // Получаем прямую ссылку на аудио
-  try {
-    const sr = await fetch(`${BASE}/api/stream/${videoId}`);
-    const sd = await sr.json();
-    if (!sd.url) throw new Error("no url");
-    audio.src = sd.url;
-  } catch(e) {
-    console.error("Stream error:", e);
-    document.getElementById("np-title").textContent = "❌ Ошибка воспроизведения";
-    return;
-  }
+  audio.src = `${BASE}/api/download/${videoId}`;
+  audio.preload = 'auto';
   audio.load();
-  try { await audio.play(); isPlaying = true; } catch(e) { console.error(e); }
+
+  try {
+    await audio.play();
+    isPlaying = true;
+  } catch(e) {
+    console.error('Play error:', e);
+    document.getElementById('np-title').textContent = '❌ Ошибка воспроизведения';
+    document.getElementById('play-pause-btn').textContent = '▶️';
+  }
+
+  isLoadingTrack = false;
 }
 
 function togglePlay() {
-  if (!currentTrack) return;
-  if (audio.paused) { audio.play(); isPlaying = true; document.getElementById('play-pause-btn').textContent = '⏸️'; }
-  else { audio.pause(); isPlaying = false; document.getElementById('play-pause-btn').textContent = '▶️'; }
+  if (!currentTrack || isLoadingTrack) return;
+  if (audio.paused) {
+    audio.play();
+    isPlaying = true;
+    document.getElementById('play-pause-btn').textContent = '⏸️';
+  } else {
+    audio.pause();
+    isPlaying = false;
+    document.getElementById('play-pause-btn').textContent = '▶️';
+  }
 }
 
 function nextTrack() {
+  if (!queue.length) return;
   if (isShuffle) { queueIndex = Math.floor(Math.random() * queue.length); }
   else { queueIndex = (queueIndex + 1) % queue.length; }
   if (queue[queueIndex]) playTrack(JSON.stringify(queue[queueIndex]), '', queueIndex);
@@ -447,6 +459,7 @@ function nextTrack() {
 
 function prevTrack() {
   if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+  if (!queue.length) return;
   queueIndex = (queueIndex - 1 + queue.length) % queue.length;
   if (queue[queueIndex]) playTrack(JSON.stringify(queue[queueIndex]), '', queueIndex);
 }
@@ -458,6 +471,7 @@ function shuffleToggle() {
 
 function repeatToggle() {
   isRepeat = !isRepeat;
+  audio.loop = isRepeat;
   document.getElementById('repeat-btn').style.color = isRepeat ? 'var(--accent2)' : '';
 }
 
@@ -465,14 +479,8 @@ function seekAudio(e) {
   if (!audio.duration) return;
   const bar = document.getElementById('progress-bar');
   const rect = bar.getBoundingClientRect();
-  const ratio = (e.clientX - rect.left) / rect.width;
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   audio.currentTime = ratio * audio.duration;
-}
-
-function markPlaying(id) {
-  document.querySelectorAll('.track').forEach(el => {
-    el.classList.toggle('playing', el.querySelector('.track-title') && currentTrack && el.onclick?.toString().includes(id));
-  });
 }
 
 function formatTime(s) {
@@ -490,19 +498,40 @@ audio.addEventListener('timeupdate', () => {
 });
 
 audio.addEventListener('ended', () => {
-  if (isRepeat) { audio.currentTime = 0; audio.play(); }
-  else nextTrack();
+  if (!isRepeat) nextTrack();
 });
 
-audio.addEventListener('play', () => { isPlaying = true; document.getElementById('play-pause-btn').textContent = '⏸️'; });
-audio.addEventListener('pause', () => { isPlaying = false; document.getElementById('play-pause-btn').textContent = '▶️'; });
+audio.addEventListener('play', () => {
+  isPlaying = true;
+  isLoadingTrack = false;
+  document.getElementById('play-pause-btn').textContent = '⏸️';
+});
+
+audio.addEventListener('pause', () => {
+  isPlaying = false;
+  document.getElementById('play-pause-btn').textContent = '▶️';
+});
+
+audio.addEventListener('waiting', () => {
+  document.getElementById('play-pause-btn').textContent = '⏳';
+});
+
+audio.addEventListener('canplay', () => {
+  if (isPlaying) document.getElementById('play-pause-btn').textContent = '⏸️';
+});
+
+audio.addEventListener('error', () => {
+  isLoadingTrack = false;
+  document.getElementById('np-title').textContent = '❌ Не удалось загрузить трек';
+  document.getElementById('play-pause-btn').textContent = '▶️';
+});
 
 function showLoader(id) {
   document.getElementById(id).innerHTML = '<div class="loader"><span></span><span></span><span></span></div>';
 }
 
-// Init favorites
-fetch(`${BASE}/api/favorites`).then(r => r.json()).then(d => { favorites = d.favorites || []; });
+// Загружаем избранное при старте
+fetch(`${BASE}/api/favorites`).then(r => r.json()).then(d => { favorites = d.favorites || []; }).catch(() => {});
 </script>
 </body>
 </html>
