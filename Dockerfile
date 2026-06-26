@@ -7,4 +7,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
-CMD ["python", "bot.py"]
+
+ENV PYTHONPATH=/app
+
+CMD ["python", "main.py"]
