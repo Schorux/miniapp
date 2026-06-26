@@ -1,17 +1,16 @@
 """
 FastAPI сервер для Telegram Mini App
-Запускается вместе с ботом
 """
 
 import os
-import asyncio
 import logging
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+import aiofiles
 
 from database import (
     get_favorites, add_favorite, remove_favorite,
@@ -30,17 +29,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Раздаём статику (index.html и т.д.)
 STATIC_DIR = Path(__file__).parent / "webapp_static"
 STATIC_DIR.mkdir(exist_ok=True)
-
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 
 @app.get("/")
 async def root():
     return FileResponse(str(STATIC_DIR / "index.html"))
-
 
 @app.get("/api/search")
 async def api_search(q: str, limit: int = 5):
@@ -49,11 +44,9 @@ async def api_search(q: str, limit: int = 5):
     results = search_youtube_music(q.strip(), max_results=limit)
     return {"results": results}
 
-
 @app.get("/api/favorites")
 async def api_favorites():
     return {"favorites": get_favorites(limit=50)}
-
 
 class FavoriteAdd(BaseModel):
     track_name: str
@@ -61,7 +54,6 @@ class FavoriteAdd(BaseModel):
     youtube_url: str = None
     thumbnail_url: str = None
     duration: str = None
-
 
 @app.post("/api/favorites")
 async def api_add_favorite(body: FavoriteAdd):
@@ -74,20 +66,16 @@ async def api_add_favorite(body: FavoriteAdd):
     )
     return {"added": ok}
 
-
 @app.delete("/api/favorites/{track_id}")
 async def api_remove_favorite(track_id: int):
     remove_favorite(track_id)
     return {"removed": True}
 
-
 @app.get("/api/wave")
 async def api_wave():
-    """Рекомендации на основе любимых артистов"""
     top_artists = get_top_artists_from_favorites(limit=3)
     if not top_artists:
         return {"tracks": [], "message": "Добавь треки в избранное для рекомендаций"}
-
     all_tracks = []
     for entry in top_artists[:2]:
         artist = entry["artist"]
@@ -95,47 +83,40 @@ async def api_wave():
         for t in results:
             if t not in all_tracks:
                 all_tracks.append(t)
-
     return {"tracks": all_tracks[:10], "based_on": [e["artist"] for e in top_artists]}
 
-
 @app.get("/api/download/{video_id}")
-async def api_download(video_id: str):
+async def api_download(video_id: str, request: Request):
     url = f"https://www.youtube.com/watch?v={video_id}"
     file_path = await download_audio(url, video_id)
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(500, "Download failed")
-    return FileResponse(file_path, media_type="audio/mpeg", filename=f"{video_id}.mp3")
 
+    file_size = os.path.getsize(file_path)
+    range_header = request.headers.get("range")
 
-@app.get("/api/stream/{video_id}")
-async def api_stream(video_id: str):
-    """Получить прямую ссылку на аудио без скачивания"""
-    import yt_dlp
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'format': 'bestaudio/best',
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        'extractor_args': {
-            'youtube': {'player_client': ['android', 'web']}
-        },
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            audio_url = info.get('url')
-            if not audio_url:
-                # Ищем в форматах
-                for f in reversed(info.get('formats', [])):
-                    if f.get('acodec') != 'none' and f.get('url'):
-                        audio_url = f['url']
-                        break
-            if not audio_url:
-                raise HTTPException(500, "No audio URL found")
-            return {"url": audio_url, "title": info.get("title"), "duration": info.get("duration")}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    if range_header:
+        start, end = range_header.replace("bytes=", "").split("-")
+        start = int(start)
+        end = int(end) if end else file_size - 1
+        chunk_size = end - start + 1
+
+        async def stream_range():
+            async with aiofiles.open(file_path, "rb") as f:
+                await f.seek(start)
+                data = await f.read(chunk_size)
+                yield data
+
+        return StreamingResponse(
+            stream_range(), status_code=206, media_type="audio/mpeg",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(chunk_size),
+            }
+        )
+
+    return FileResponse(
+        file_path, media_type="audio/mpeg",
+        headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
+    )
