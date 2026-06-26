@@ -145,7 +145,39 @@ async def api_wave(artist: str = None, track: str = None):
 
 @app.get("/api/stream/{video_id}")
 async def api_stream(video_id: str):
-    """Проксируем аудио поток через сервер — без задержки"""
+    """Скачиваем и стримим аудио"""
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
+    output_path = os.path.join(str(Path(__file__).parent / "temp_music"), f"{video_id}.mp3")
+
+    # Если уже скачан — отдаём сразу
+    if not os.path.exists(output_path):
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        file_path = await download_audio(youtube_url, video_id)
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(500, "Download failed")
+        output_path = file_path
+
+    def iter_file():
+        with open(output_path, 'rb') as f:
+            while chunk := f.read(65536):
+                yield chunk
+
+    return StreamingResponse(
+        iter_file(),
+        media_type="audio/mpeg",
+        headers={
+            'Content-Length': str(os.path.getsize(output_path)),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-cache',
+        }
+    )
+
+@app.get("/api/stream_old/{video_id}")
+async def api_stream_old(video_id: str):
+    """Старый метод — прямая ссылка"""
     import yt_dlp
     import httpx
     from fastapi.responses import StreamingResponse
@@ -157,16 +189,10 @@ async def api_stream(video_id: str):
         'quiet': True,
         'no_warnings': True,
         'format': 'bestaudio/best',
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
         'noplaylist': True,
     }
     if os.path.exists(cookies_file):
         ydl_opts['cookiefile'] = cookies_file
-        logger.info(f"Using cookies from {cookies_file}")
-    else:
-        logger.warning(f"cookies.txt NOT FOUND at {cookies_file}")
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
