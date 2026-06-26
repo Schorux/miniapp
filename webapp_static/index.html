@@ -463,12 +463,13 @@ async function playTrack(trackOrJson, context, index) {
   const trackId = track.id;
   const trackUrl = encodeURIComponent(track.url || '');
 
-  // Deezer — используем preview_url напрямую (30 сек)
-  if (track.source === 'deezer' && track.preview_url) {
-    audio.src = `${BASE}/api/stream/${trackId}?url=${encodeURIComponent(track.preview_url)}`;
-  } else {
-    audio.src = `${BASE}/api/stream/${trackId}?url=${trackUrl}`;
-  }
+  // Получаем url из кэша (там полный объект трека)
+  const cachedTrack = trackCache[trackId] || track;
+  const streamUrl = cachedTrack.preview_url && cachedTrack.source === 'deezer'
+    ? cachedTrack.preview_url
+    : (cachedTrack.url || '');
+
+  audio.src = `${BASE}/api/stream/${trackId}?url=${encodeURIComponent(streamUrl)}`;
   audio.load();
   try { await audio.play(); isPlaying = true; } catch(e) { console.error('Play error:', e); }
 }
